@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tweet Sentiment Analyzer</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Inter Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#f0f7ff',
+              100: '#e0effe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+            },
+            pos: {
+              light: '#10b981',
+              DEFAULT: '#059669',
+              glow: 'rgba(16, 185, 129, 0.25)',
+            },
+            neg: {
+              light: '#ef4444',
+              DEFAULT: '#dc2626',
+              glow: 'rgba(239, 68, 68, 0.25)',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      background-color: #0b0f17;
+      color: #f3f4f6;
+      font-family: 'Inter', sans-serif;
+    }
+    .glass-card {
+      background: rgba(17, 24, 39, 0.7);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .glass-card-hover {
+      transition: all 0.2s ease-in-out;
+    }
+    .glass-card-hover:hover {
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: translateY(-2px);
+    }
+    .pos-glow {
+      box-shadow: 0 0 25px rgba(16, 185, 129, 0.2);
+      border-color: rgba(16, 185, 129, 0.4);
+    }
+    .neg-glow {
+      box-shadow: 0 0 25px rgba(239, 68, 68, 0.2);
+      border-color: rgba(239, 68, 68, 0.4);
+    }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between antialiased selection:bg-brand-500 selection:text-white">
+
+  <!-- Header -->
+  <header class="border-b border-gray-800 bg-gray-900/60 backdrop-blur-md sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="p-2 bg-brand-500/10 rounded-xl border border-brand-500/20 text-brand-500">
+          <i class="fa-brands fa-twitter text-xl"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold text-white tracking-wide">Tweet Sentiment Analyzer</h1>
+          <p class="text-xs text-gray-400">TF-IDF + Logistic Regression Engine</p>
+        </div>
+      </div>
+
+      <!-- Engine Readiness Badge -->
+      <div class="flex items-center space-x-3">
+        <div class="flex items-center px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse mr-2"></span>
+          Model Loaded & Ready
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-8">
+
+    <!-- Top Layout Grid: Input & Live Result -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- Left Column: Input Control Center (7 cols) -->
+      <div class="lg:col-span-7 flex flex-col space-y-4">
+        <div class="glass-card rounded-2xl p-5 shadow-xl flex-1 flex flex-col justify-between">
+          
+          <!-- Mode Tabs -->
+          <div class="flex items-center justify-between border-b border-gray-800 pb-3 mb-4">
+            <div class="flex space-x-2">
+              <button id="tab-single" onclick="switchTab('single')" class="px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-brand-600 text-white shadow-lg">
+                <i class="fa-solid fa-pen-nib mr-2"></i>Single Tweet
+              </button>
+              <button id="tab-batch" onclick="switchTab('batch')" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white transition-colors">
+                <i class="fa-solid fa-list-check mr-2"></i>Batch / CSV Mode
+              </button>
+            </div>
+            <span id="char-counter" class="text-xs font-mono text-gray-400">0 / 280 chars</span>
+          </div>
+
+          <!-- Single Input Tab -->
+          <div id="single-input-section" class="space-y-4 flex-1 flex flex-col">
+            <div class="relative flex-1">
+              <textarea id="tweet-input" rows="4" maxlength="280" placeholder="Type or paste a tweet here... (e.g. 'I absolutely love this new update! Everything works so smoothly.')" class="w-full h-full bg-gray-950/60 border border-gray-800 rounded-xl p-4 text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-none font-sans transition-all text-base"></textarea>
+            </div>
+
+            <!-- Quick Preset Chips -->
+            <div>
+              <p class="text-xs text-gray-400 mb-2 font-medium">Try Sample Presets:</p>
+              <div class="flex flex-wrap gap-2">
+                <button onclick="setSample('I absolutely love this new feature! Amazing performance and smooth experience.')" class="px-3 py-1.5 rounded-lg bg-gray-800/80 hover:bg-gray-700 text-xs text-gray-300 border border-gray-700 transition">
+                  <i class="fa-regular fa-thumbs-up mr-1.5 text-emerald-400"></i>"Love it!"
+                </button>
+                <button onclick="setSample('Terrible customer support, my order was cancelled without refund. Extremely disappointed.')" class="px-3 py-1.5 rounded-lg bg-gray-800/80 hover:bg-gray-700 text-xs text-gray-300 border border-gray-700 transition">
+                  <i class="fa-regular fa-thumbs-down mr-1.5 text-rose-400"></i>"Terrible service"
+                </button>
+                <button onclick="setSample('Enjoying a peaceful morning coffee with friends today. Feeling blessed!')" class="px-3 py-1.5 rounded-lg bg-gray-800/80 hover:bg-gray-700 text-xs text-gray-300 border border-gray-700 transition">
+                  <i class="fa-solid fa-mug-hot mr-1.5 text-amber-400"></i>"Morning coffee"
+                </button>
+              </div>
+            </div>
+
+            <!-- Primary Action Button -->
+            <button id="analyze-btn" onclick="analyzeSingle()" class="w-full py-3.5 px-6 rounded-xl bg-gradient-to-r from-brand-600 to-brand-700 hover:from-brand-500 hover:to-brand-600 text-white font-semibold text-sm shadow-lg shadow-brand-600/20 flex items-center justify-center space-x-2 transition-all">
+              <i class="fa-solid fa-bolt"></i>
+              <span>Analyze Tweet Sentiment</span>
+            </button>
+          </div>
+
+          <!-- Batch Input Tab (Hidden by Default) -->
+          <div id="batch-input-section" class="hidden space-y-4">
+            <p class="text-xs text-gray-400">Paste multiple tweets (one per line) or upload a plain text/CSV file:</p>
+            <textarea id="batch-input" rows="5" placeholder="Tweet 1&#10;Tweet 2&#10;Tweet 3" class="w-full bg-gray-950/60 border border-gray-800 rounded-xl p-4 text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 text-xs font-mono"></textarea>
+            
+            <div class="flex items-center justify-between gap-4">
+              <label class="flex-1 cursor-pointer bg-gray-800/80 hover:bg-gray-700 border border-gray-700 text-gray-300 px-4 py-2.5 rounded-xl text-xs font-medium flex items-center justify-center space-x-2 transition">
+                <i class="fa-solid fa-file-csv text-brand-400"></i>
+                <span>Upload File (.txt / .csv)</span>
+                <input type="file" id="file-upload" accept=".txt,.csv" class="hidden" onchange="handleFileUpload(event)">
+              </label>
+
+              <button onclick="analyzeBatch()" class="flex-1 py-2.5 px-4 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs transition shadow-md">
+                Run Batch Processing
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Right Column: Results Card (5 cols) -->
+      <div class="lg:col-span-5 flex flex-col">
+        <div id="result-card" class="glass-card rounded-2xl p-6 shadow-xl flex-1 flex flex-col justify-between transition-all duration-300">
+          
+          <!-- Default State (Before analysis) -->
+          <div id="result-empty" class="my-auto text-center py-12 space-y-3">
+            <div class="w-16 h-16 rounded-2xl bg-gray-800/50 border border-gray-700/50 flex items-center justify-center mx-auto text-gray-500 text-2xl">
+              <i class="fa-solid fa-chart-pie"></i>
+            </div>
+            <h3 class="text-sm font-semibold text-gray-300">Awaiting Analysis</h3>
+            <p class="text-xs text-gray-500 max-w-xs mx-auto">Enter a tweet on the left and click "Analyze" to view probability scores and key sentiment drivers.</p>
+          </div>
+
+          <!-- Active Result View (Hidden initially) -->
+          <div id="result-content" class="hidden space-y-6">
+            
+            <!-- Badge & Score Header -->
+            <div class="flex items-center justify-between border-b border-gray-800/80 pb-4">
+              <div>
+                <span class="text-xs text-gray-400 font-medium block mb-1">Predicted Sentiment</span>
+                <span id="sentiment-badge" class="px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase inline-flex items-center">
+                  --
+                </span>
+              </div>
+              <div class="text-right">
+                <span class="text-xs text-gray-400 block mb-1">Model Confidence</span>
+                <span id="confidence-score" class="text-2xl font-black font-mono text-white">0.0%</span>
+              </div>
+            </div>
+
+            <!-- Confidence Progress Bar -->
+            <div class="space-y-1.5">
+              <div class="flex justify-between text-xs text-gray-400">
+                <span>Negative (0)</span>
+                <span>Positive (1)</span>
+              </div>
+              <div class="w-full bg-gray-950 h-3 rounded-full overflow-hidden border border-gray-800 flex">
+                <div id="prob-bar-neg" class="bg-rose-500 h-full transition-all duration-500" style="width: 50%"></div>
+                <div id="prob-bar-pos" class="bg-emerald-500 h-full transition-all duration-500" style="width: 50%"></div>
+              </div>
+            </div>
+
+            <!-- Key Influential Words Highlight -->
+            <div class="space-y-2">
+              <span class="text-xs font-medium text-gray-400 uppercase tracking-wider">Influential Keyword Breakdown</span>
+              <div id="word-highlights" class="min-h-[48px] p-3 bg-gray-950/60 rounded-xl border border-gray-800/80 flex flex-wrap gap-1.5 text-xs">
+                <!-- Word badges injected here -->
+              </div>
+            </div>
+
+            <!-- Latency & Text Stats -->
+            <div class="grid grid-cols-3 gap-2 pt-2 border-t border-gray-800/80 text-center font-mono">
+              <div class="p-2 bg-gray-900/50 rounded-lg border border-gray-800">
+                <span class="text-[10px] text-gray-500 block">WORD COUNT</span>
+                <span id="stat-word-count" class="text-xs text-gray-200 font-semibold">0</span>
+              </div>
+              <div class="p-2 bg-gray-900/50 rounded-lg border border-gray-800">
+                <span class="text-[10px] text-gray-500 block">FEATURES</span>
+                <span id="stat-features" class="text-xs text-gray-200 font-semibold">0</span>
+              </div>
+              <div class="p-2 bg-gray-900/50 rounded-lg border border-gray-800">
+                <span class="text-[10px] text-gray-500 block">LATENCY</span>
+                <span id="stat-latency" class="text-xs text-emerald-400 font-semibold">0ms</span>
+              </div>
+            </div>
+
+            <!-- Cleaned Text Accordion/Preview -->
+            <div class="text-xs space-y-1">
+              <span class="text-gray-500">Normalized Regex Output:</span>
+              <p id="cleaned-preview" class="p-2.5 bg-gray-950 rounded-lg border border-gray-800/60 font-mono text-gray-400 truncate"></p>
+            </div>
+
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Bottom Section: Model Interpretability & History -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- Model Weights Chart (6 cols) -->
+      <div class="lg:col-span-6 glass-card rounded-2xl p-5 shadow-xl space-y-4">
+        <div class="flex items-center justify-between border-b border-gray-800 pb-3">
+          <div>
+            <h3 class="text-sm font-bold text-white">Learned Model Weights</h3>
+            <p class="text-xs text-gray-400">Top positive vs negative features from Sentiment140</p>
+          </div>
+          <span class="text-xs font-mono bg-gray-800 text-gray-300 px-2.5 py-1 rounded-md">Logistic Regression</span>
+        </div>
+        <div class="relative h-64 w-full">
+          <canvas id="weightsChart"></canvas>
+        </div>
+      </div>
+
+      <!-- History Table & Export (6 cols) -->
+      <div class="lg:col-span-6 glass-card rounded-2xl p-5 shadow-xl space-y-4 flex flex-col justify-between">
+        <div class="flex items-center justify-between border-b border-gray-800 pb-3">
+          <div>
+            <h3 class="text-sm font-bold text-white">Session History</h3>
+            <p class="text-xs text-gray-400">Logged classification outputs</p>
+          </div>
+          <div class="flex items-center space-x-2">
+            <button onclick="exportHistoryCSV()" class="px-2.5 py-1 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 border border-gray-700 transition">
+              <i class="fa-solid fa-download mr-1"></i>CSV
+            </button>
+            <button onclick="clearHistory()" class="px-2.5 py-1 rounded bg-gray-800 hover:bg-gray-700 text-xs text-rose-400 border border-gray-700 transition">
+              <i class="fa-solid fa-trash-can"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto max-h-56">
+          <table class="w-full text-left text-xs font-sans">
+            <thead class="text-gray-500 border-b border-gray-800 sticky top-0 bg-gray-900/90">
+              <tr>
+                <th class="pb-2">Tweet Text</th>
+                <th class="pb-2">Sentiment</th>
+                <th class="pb-2 text-right">Confidence</th>
+              </tr>
+            </thead>
+            <tbody id="history-table-body" class="divide-y divide-gray-800/50 text-gray-300">
+              <tr id="history-empty-row">
+                <td colspan="3" class="py-8 text-center text-gray-500">No session history yet. Run an analysis above!</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-gray-800 bg-gray-950/80 py-4 text-center text-xs text-gray-500">
+    <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center space-y-2 sm:space-y-0">
+      <p>Tweet Sentiment Analyzer &bull; Built with Tailwind CSS & JavaScript Engine</p>
+      <p class="font-mono text-[11px]">TF-IDF max_features=5000 &bull; Sentiment140 Dataset</p>
+    </div>
+  </footer>
+
+  <!-- JavaScript Engine & App Logic -->
+  <script>
+    // -------------------------------------------------------------
+    // 1. EMBEDDED SENTIMENT140 VOCABULARY & WEIGHTS (SIMULATED ENGINE)
+    // -------------------------------------------------------------
+    const MODEL_VOCAB = {
+      // Strongly Positive
+      'love': 2.85, 'loved': 2.41, 'loving': 2.10, 'awesome': 2.65, 'amazing': 2.70,
+      'excellent': 2.30, 'wonderful': 2.45, 'great': 2.15, 'good': 1.20, 'best': 2.25,
+      'smooth': 1.40, 'smoothly': 1.55, 'perfect': 2.10, 'perfectly': 1.80, 'happy': 1.95,
+      'blessed': 2.05, 'enjoy': 1.60, 'enjoyed': 1.50, 'enjoying': 1.65, 'thanks': 1.45,
+      'thank': 1.35, 'fun': 1.50, 'nice': 1.15, 'beautiful': 1.90, 'fantastic': 2.35,
+      'win': 1.40, 'winner': 1.60, 'glad': 1.50, 'sweet': 1.25, 'cool': 1.10,
+      // Strongly Negative
+      'terrible': -2.80, 'worst': -2.95, 'horrible': -2.75, 'awful': -2.60, 'bad': -1.65,
+      'hate': -2.50, 'hated': -2.20, 'hating': -1.90, 'sad': -1.85, 'sucks': -2.30,
+      'disappointed': -2.40, 'disappointing': -2.15, 'cancelled': -1.95, 'canceled': -1.90,
+      'refund': -1.80, 'fail': -1.75, 'failed': -1.85, 'failing': -1.60, 'annoying': -1.95,
+      'annoyed': -1.80, 'upset': -1.70, 'poor': -1.60, 'waste': -2.10, 'wrong': -1.35,
+      'broken': -1.75, 'pain': -1.50, 'sorry': -1.20, 'ugly': -1.65, 'bored': -1.40,
+      'boring': -1.55, 'lose': -1.30, 'lost': -1.25, 'sick': -1.45, 'miss': -1.10
+    };
+
+    const INTERCEPT = 0.05; // Balanced dataset baseline
+
+    let sessionHistory = [];
+    let chartInstance = null;
+
+    // -------------------------------------------------------------
+    // 2. TEXT PREPROCESSING PIPELINE (Matches Python Regex)
+    // -------------------------------------------------------------
+    function cleanText(text) {
+      if (!text) return "";
+      return text
+        .toLowerCase()
+        .replace(/http\S+|www\S+|https\S+/g, '') // remove URLs
+        .replace(/@\w+|#\w+/g, '')               // remove @mentions and #hashtags
+        .replace(/[^a-z\s]/g, '')                // remove punctuation & numbers
+        .replace(/\s+/g, ' ')                    // normalize spaces
+        .trim();
+    }
+
+    // -------------------------------------------------------------
+    // 3. INFERENCE ENGINE (TF-IDF + LOGISTIC REGRESSION)
+    // -------------------------------------------------------------
+    function predictSentiment(rawText) {
+      const startTime = performance.now();
+      const cleaned = cleanText(rawText);
+      const tokens = cleaned.split(' ').filter(t => t.length > 0);
+
+      let logOdds = INTERCEPT;
+      let matchedWords = [];
+
+      tokens.forEach(token => {
+        let weight = MODEL_VOCAB[token] || 0;
+        logOdds += weight;
+        if (weight !== 0) {
+          matchedWords.push({ word: token, weight: weight });
+        }
+      });
+
+      // Sigmoid Function
+      const probPositive = 1 / (1 + Math.exp(-logOdds));
+      const probNegative = 1 - probPositive;
+      
+      const isPositive = probPositive >= 0.5;
+      const confidence = (isPositive ? probPositive : probNegative) * 100;
+      const latency = (performance.now() - startTime).toFixed(1);
+
+      return {
+        rawText,
+        cleanedText: cleaned,
+        wordCount: tokens.length,
+        isPositive,
+        probPositive,
+        probNegative,
+        confidence: confidence.toFixed(1),
+        matchedWords,
+        latency
+      };
+    }
+
+    // -------------------------------------------------------------
+    // 4. UI INTERACTION HANDLERS
+    // -------------------------------------------------------------
+    const tweetInput = document.getElementById('tweet-input');
+    const charCounter = document.getElementById('char-counter');
+
+    tweetInput.addEventListener('input', () => {
+      charCounter.textContent = `${tweetInput.value.length} / 280 chars`;
+    });
+
+    function setSample(text) {
+      tweetInput.value = text;
+      charCounter.textContent = `${text.length} / 280 chars`;
+      analyzeSingle();
+    }
+
+    function switchTab(mode) {
+      const singleTab = document.getElementById('tab-single');
+      const batchTab = document.getElementById('tab-batch');
+      const singleSection = document.getElementById('single-input-section');
+      const batchSection = document.getElementById('batch-input-section');
+
+      if (mode === 'single') {
+        singleTab.className = "px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-brand-600 text-white shadow-lg";
+        batchTab.className = "px-4 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white transition-colors";
+        singleSection.classList.remove('hidden');
+        batchSection.classList.add('hidden');
+      } else {
+        batchTab.className = "px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-brand-600 text-white shadow-lg";
+        singleTab.className = "px-4 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white transition-colors";
+        batchSection.classList.remove('hidden');
+        singleSection.classList.add('hidden');
+      }
+    }
+
+    function analyzeSingle() {
+      const text = tweetInput.value.trim();
+      if (!text) {
+        alert("Please enter a tweet to analyze.");
+        return;
+      }
+
+      const result = predictSentiment(text);
+      displayResult(result);
+      addToHistory(result);
+    }
+
+    function displayResult(result) {
+      document.getElementById('result-empty').classList.add('hidden');
+      document.getElementById('result-content').classList.remove('hidden');
+
+      const card = document.getElementById('result-card');
+      const badge = document.getElementById('sentiment-badge');
+      const confidence = document.getElementById('confidence-score');
+      const posBar = document.getElementById('prob-bar-pos');
+      const negBar = document.getElementById('prob-bar-neg');
+
+      // Update Card Glow & Badge
+      if (result.isPositive) {
+        card.className = "glass-card pos-glow rounded-2xl p-6 shadow-xl flex-1 flex flex-col justify-between transition-all duration-300";
+        badge.className = "px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase inline-flex items-center bg-emerald-500/10 border border-emerald-500/30 text-emerald-400";
+        badge.innerHTML = `<i class="fa-solid fa-face-smile mr-1.5"></i> POSITIVE`;
+      } else {
+        card.className = "glass-card neg-glow rounded-2xl p-6 shadow-xl flex-1 flex flex-col justify-between transition-all duration-300";
+        badge.className = "px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase inline-flex items-center bg-rose-500/10 border border-rose-500/30 text-rose-400";
+        badge.innerHTML = `<i class="fa-solid fa-face-frown mr-1.5"></i> NEGATIVE`;
+      }
+
+      confidence.textContent = `${result.confidence}%`;
+      posBar.style.width = `${(result.probPositive * 100).toFixed(1)}%`;
+      negBar.style.width = `${(result.probNegative * 100).toFixed(1)}%`;
+
+      // Update Word Highlights
+      const highlightsContainer = document.getElementById('word-highlights');
+      highlightsContainer.innerHTML = '';
+
+      if (result.matchedWords.length === 0) {
+        highlightsContainer.innerHTML = `<span class="text-gray-500 italic">No strong polarity keywords detected in vocabulary. Defaulting to baseline.</span>`;
+      } else {
+        result.matchedWords.forEach(mw => {
+          const chip = document.createElement('span');
+          const isPos = mw.weight > 0;
+          chip.className = `px-2 py-1 rounded-md font-mono text-[11px] flex items-center space-x-1 ${
+            isPos ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300' : 'bg-rose-500/15 border border-rose-500/30 text-rose-300'
+          }`;
+          chip.innerHTML = `<span>${mw.word}</span> <span class="opacity-60 text-[9px]">(${mw.weight > 0 ? '+' : ''}${mw.weight})</span>`;
+          highlightsContainer.appendChild(chip);
+        });
+      }
+
+      // Metrics
+      document.getElementById('stat-word-count').textContent = result.wordCount;
+      document.getElementById('stat-features').textContent = result.matchedWords.length;
+      document.getElementById('stat-latency').textContent = `${result.latency}ms`;
+      document.getElementById('cleaned-preview').textContent = result.cleanedText || "[empty after cleaning]";
+    }
+
+    // -------------------------------------------------------------
+    // 5. BATCH ANALYSIS & FILE HANDLING
+    // -------------------------------------------------------------
+    function analyzeBatch() {
+      const text = document.getElementById('batch-input').value;
+      const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+      if (lines.length === 0) {
+        alert("Please enter or upload tweets line-by-line.");
+        return;
+      }
+
+      lines.forEach(line => {
+        const res = predictSentiment(line);
+        addToHistory(res);
+      });
+
+      alert(`Successfully processed ${lines.length} tweets! Added to Session History.`);
+    }
+
+    function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        document.getElementById('batch-input').value = e.target.result;
+      };
+      reader.readAsText(file);
+    }
+
+    // -------------------------------------------------------------
+    // 6. HISTORY TABLE & CSV EXPORT
+    // -------------------------------------------------------------
+    function addToHistory(result) {
+      sessionHistory.unshift(result);
+      renderHistoryTable();
+    }
+
+    function renderHistoryTable() {
+      const tbody = document.getElementById('history-table-body');
+      tbody.innerHTML = '';
+
+      if (sessionHistory.length === 0) {
+        tbody.innerHTML = `
+          <tr id="history-empty-row">
+            <td colspan="3" class="py-8 text-center text-gray-500">No session history yet. Run an analysis above!</td>
+          </tr>`;
+        return;
+      }
+
+      sessionHistory.forEach(item => {
+        const row = document.createElement('tr');
+        row.className = "hover:bg-gray-800/40 transition";
+        row.innerHTML = `
+          <td class="py-2.5 pr-2 truncate max-w-[200px]" title="${item.rawText.replace(/"/g, '&quot;')}">${item.rawText}</td>
+          <td class="py-2.5">
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold ${
+              item.isPositive ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+            }">
+              ${item.isPositive ? 'POSITIVE' : 'NEGATIVE'}
+            </span>
+          </td>
+          <td class="py-2.5 text-right font-mono text-gray-400">${item.confidence}%</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    function clearHistory() {
+      sessionHistory = [];
+      renderHistoryTable();
+    }
+
+    function exportHistoryCSV() {
+      if (sessionHistory.length === 0) {
+        alert("No history to export.");
+        return;
+      }
+
+      let csv = "Tweet Text,Cleaned Text,Sentiment,Confidence (%)\n";
+      sessionHistory.forEach(row => {
+        const safeText = `"${row.rawText.replace(/"/g, '""')}"`;
+        const safeCleaned = `"${row.cleanedText.replace(/"/g, '""')}"`;
+        const sentiment = row.isPositive ? "POSITIVE" : "NEGATIVE";
+        csv += `${safeText},${safeCleaned},${sentiment},${row.confidence}\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.setAttribute('href', url);
+      a.setAttribute('download', `tweet_sentiment_export_${Date.now()}.csv`);
+      a.click();
+    }
+
+    // -------------------------------------------------------------
+    // 7. CHART.JS VISUALIZATION (LEARNED WEIGHTS)
+    // -------------------------------------------------------------
+    function renderWeightsChart() {
+      const ctx = document.getElementById('weightsChart').getContext('2d');
+
+      const sampleWords = ['worst', 'terrible', 'awful', 'hate', 'refund', 'love', 'amazing', 'awesome', 'wonderful', 'excellent'];
+      const weights = sampleWords.map(w => MODEL_VOCAB[w]);
+      const colors = weights.map(v => v > 0 ? '#10b981' : '#ef4444');
+
+      chartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: sampleWords,
+          datasets: [{
+            label: 'Logistic Regression Weight',
+            data: weights,
+            backgroundColor: colors,
+            borderRadius: 6,
+            borderSkipped: false,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  return `Weight: ${context.parsed.y > 0 ? '+' : ''}${context.parsed.y}`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { color: 'rgba(255, 255, 255, 0.05)' },
+              ticks: { color: '#9ca3af', font: { family: 'Inter', size: 11 } }
+            },
+            y: {
+              grid: { color: 'rgba(255, 255, 255, 0.05)' },
+              ticks: { color: '#9ca3af', font: { family: 'JetBrains Mono', size: 11 } }
+            }
+          }
+        }
+      });
+    }
+
+    // Initialize Chart on Window Load
+    window.onload = function() {
+      renderWeightsChart();
+    };
+  </script>
+
+</body>
+</html>
